@@ -1,3 +1,4 @@
+/// <reference path="fabricPlugin.ts"/>
 module Fabric {
 
   export class ProfileSelector {
@@ -20,7 +21,7 @@ module Fabric {
       includedProfiles: '='
     };
 
-    public controller = ($scope, $element, $attrs, workspace, jolokia, localStorage, $location) => {
+    public controller = ["$scope", "$element", "$attrs", "workspace", "jolokia", "localStorage", "$location", ($scope, $element, $attrs, workspace, jolokia, localStorage, $location) => {
       $scope.profiles = [];
       $scope.responseJson = '';
       $scope.filterText = '';
@@ -34,11 +35,14 @@ module Fabric {
       $scope.tree = [];
 
       $scope.showProfile = (profile) => {
-        return $scope.filterText.isBlank() || profile.id.has($scope.filterText);
+        return Core.matchFilterIgnoreCase(profile.id, $scope.filterText);
       };
 
       $scope.showBranch = (branch) => {
-        return $scope.filterText.isBlank() || branch.profiles.some((profile) => { return profile.id.has($scope.filterText) });
+        return $scope.filterText.isBlank() ||
+               branch.profiles.some((profile) => {
+                 return Core.matchFilterIgnoreCase(profile.id, $scope.filterText)
+               });
       };
 
       $scope.goto = (profile) => {
@@ -135,6 +139,10 @@ module Fabric {
       }, true);
 
 
+      $scope.abstract = () => {
+        return $scope.profiles.filter((profile) => { return profile['abstract']; });
+      };
+
       $scope.selected = () => {
         return $scope.profiles.filter((profile) => { return profile['selected']; });
       };
@@ -152,6 +160,9 @@ module Fabric {
 
 
       $scope.getSelectedClass = (profile) => {
+        if (profile.abstract) {
+          return "abstract";
+        }
         if (profile.selected) {
           return "selected";
         }
@@ -160,15 +171,11 @@ module Fabric {
 
 
       $scope.$watch('selectedAll', (newValue, oldValue) => {
-        if (newValue !== oldValue) {
-          if ($scope.indeterminate) {
-            $scope.selectNone();
+        if (!$scope.indeterminate && newValue !== oldValue) {
+          if (newValue) {
+            $scope.selectAll();
           } else {
-            if (newValue) {
-              $scope.selectAll();
-            } else {
-              $scope.selectNone();
-            }
+            $scope.selectNone();
           }
         }
       });
@@ -208,7 +215,7 @@ module Fabric {
               type: 'exec',
               mbean: managerMBean,
               operation: 'getProfiles(java.lang.String, java.util.List)',
-              arguments: [$scope.versionId, ['id', 'hidden']]
+              arguments: [$scope.versionId, ['id', 'hidden', 'abstract']]
             }, onSuccess($scope.render, {
               error: (response) => {
                 // TODO somewhere this directive is kinda getting leaked, need to track down
@@ -249,7 +256,7 @@ module Fabric {
         }
       });
 
-    };
+    }];
 
 
     public link = ($scope, $element, $attrs) => {
@@ -278,6 +285,8 @@ module Fabric {
 
       $scope.$watch('selectedProfiles', (newValue, oldValue) => {
         if (newValue !== oldValue) {
+          oldValue.each((profile) => { $scope.profiles.find((p) => p.id == profile.id ).selected = false; })
+          newValue.each((profile) => { $scope.profiles.find((p) => p.id == profile.id ).selected = true; })
           if ($scope.selectedProfiles.length > 0) {
             if ($scope.selectedProfiles.length !== $scope.profiles.length) {
               $scope.indeterminate = true;
@@ -306,8 +315,6 @@ module Fabric {
           }
         }
       }, true);
-
-
     };
   }
 }

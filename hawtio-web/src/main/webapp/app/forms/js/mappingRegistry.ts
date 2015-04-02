@@ -1,25 +1,18 @@
 /**
  * @module Forms
  */
+///<reference path="formHelpers.ts"/>
 module Forms {
 
   /**
    * Create a DOM widget tree for the given set of form configuration data.
    *
    * This will include either the standard AngularJS widgets or custom widgets
-   * @method createWidget
-   * @param {String} propTypeName
-   * @param {any} property
-   * @param {any} schema
-   * @param {any} config
-   * @param {String} id
-   * @param {Boolean ignorePrefixInLabel
-   * @param {String} configScoepName
-   * @param {Boolean} wrapInGroup
    */
-  export function createWidget(propTypeName, property, schema, config, id, ignorePrefixInLabel, configScopeName, wrapInGroup = true) {
-    var input = null;
-    var group = null;
+  export function createWidget(propTypeName, property, schema, config, id, ignorePrefixInLabel, configScopeName,
+                               wrapInGroup = true, disableHumanizeLabel = false) {
+    var input:JQuery = null;
+    var group:JQuery = null;
 
     function copyElementAttributes(element, propertyName) {
       var propertyAttributes = property[propertyName];
@@ -42,21 +35,18 @@ module Forms {
       });
     }
 
-    // lets try to create standard widget markup by default
-    // as they work better than the hawtio wrappers when inside forms...
     var options = {
       valueConverter: null
     };
     var safeId = Forms.safeIdentifier(id);
 
+    // mark as required
+    var required:boolean = property.required || false;
+
     var inputMarkup = createStandardWidgetMarkup(propTypeName, property, schema, config, options, safeId);
 
-    // Note if for whatever reason we need to go back to the old way of using hawtio directives for standard
-    // angularjs directives, just clear inputMarker to null here ;)
-    // inputMarkup = null;
-
     if (inputMarkup) {
-      input = $(inputMarkup);
+      input = angular.element(inputMarkup);
 
       copyAttributes();
 
@@ -70,17 +60,16 @@ module Forms {
 
       input.attr('name', id);
 
-      try {
-        if (config.isReadOnly()) {
-          input.attr('readonly', 'true');
-        }
-      } catch (e) {
-        // ignore missing read only function
-      }
-      var title = property.tooltip || property.label;
+      var title = property.title ||  property.tooltip || property.label;
       if (title) {
         input.attr('title', title);
       }
+      var tooltip = property.tooltip || property.description;
+      if (tooltip) {
+        input.attr('tooltip', tooltip);
+      }
+
+      var disableHumanizeLabelValue = disableHumanizeLabel || property.disableHumanizeLabel;
 
       // allow the prefix to be trimmed from the label if enabled
       var defaultLabel = id;
@@ -93,8 +82,13 @@ module Forms {
       // figure out which things to not wrap in a group and label etc...
       if (input.attr("type") !== "hidden" && wrapInGroup) {
         group = this.getControlGroup(config, config, id);
-        var labelElement = Forms.getLabel(config, config, property.title || property.label || humanizeValue(defaultLabel));
-        if (title) {
+        var labelText = property.title || property.label ||
+          (disableHumanizeLabelValue ? defaultLabel : Core.humanizeValue(defaultLabel));
+        var labelElement = Forms.getLabel(config, config, labelText, required);
+        if (tooltip) {
+          // favor using the tooltip as the title so we get the long description when people hover the mouse over the label
+          labelElement.attr('title', tooltip);
+        } else if (title) {
           labelElement.attr('title', title);
         }
         group.append(labelElement);
@@ -102,9 +96,21 @@ module Forms {
 
         var controlDiv = Forms.getControlDiv(config);
         controlDiv.append(input);
-        controlDiv.append(Forms.getHelpSpan(config, config, id));
+        controlDiv.append(Forms.getHelpSpan(config, config, id, property));
 
         group.append(controlDiv);
+
+        // add logic to be able to hide empty values
+        var showEmpty = config.showempty;
+        if (angular.isDefined(showEmpty)) {
+          var attValue:string = "true";
+          if (showEmpty === "true" || showEmpty === "false") {
+            attValue = showEmpty;
+          } else if (angular.isString(id)) {
+            attValue = showEmpty + '(\'' + id + '\')'
+          }
+          group.attr("ng-show", attValue);
+        }
 
         // allow control level directives, such as ng-show / ng-hide
         copyElementAttributes(controlDiv, "control-attributes");
@@ -117,7 +123,7 @@ module Forms {
           };
           var fn = onModelChange;
           // allow custom converters
-          var converterFn = options.valueConverter;
+          var converterFn:(scope, modelName) => void = options.valueConverter;
           if (converterFn) {
             fn = function() {
               converterFn(scope, modelName);
@@ -129,7 +135,7 @@ module Forms {
         }
       }
     } else {
-      input = $('<div></div>');
+      input = angular.element('<div></div>');
       input.attr(Forms.normalize(propTypeName, property, schema), '');
 
       copyAttributes();
@@ -149,6 +155,9 @@ module Forms {
       if (ignorePrefixInLabel || property.ignorePrefixInLabel) {
         input.attr('ignore-prefix-in-label', true);
       }
+      if (disableHumanizeLabel || property.disableHumanizeLabel) {
+        input.attr('disable-humanize-label', true);
+      }
       input.attr('name', id);
     }
 
@@ -157,24 +166,23 @@ module Forms {
       input.attr('title', label);
     }
 
-
-    // TODO check for id in the schema["required"] array too!
-    // as required can be specified either via either of these approaches
-/*
-    var schema = {
-      required: ["foo", "bar"],
-      properties: {
-        something: {
-          required: true,
-          type: "string"
+    // if in read-only mode, then configure the input accordingly
+    try {
+      if (config.isReadOnly()) {
+          input.attr('readonly', 'true');
+        // for checkbox in read-only mode, need to be disabled otherwise ppl can change the values in the selectbox
+        if (input[0].localName === "select" || (input[0].localName === "input" && input.attr("type") === "checkbox")) {
+          input.attr('disabled', 'true');
         }
       }
+    } catch (e) {
+      // ignore missing read only function
     }
-*/
-    if (property.required) {
+    if (required) {
       // don't mark checkboxes as required
-      if (input[0].localName === "input" && input.attr("type") === "checkbox") {
+      if (input[0].localName === "select" || (input[0].localName === "input" && input.attr("type") === "checkbox")) {
         // lets not set required on a checkbox, it doesn't make any sense ;)
+        input.removeAttr('required')
       } else {
         input.attr('required', 'true');
       }
@@ -232,6 +240,11 @@ module Forms {
             }
           });
           var values = Core.pathGet(property, ["enum"]);
+          // if the bit ugly properites hunt didnt work, then use the enumValues as-is
+          // as they are already the values we want
+          if (angular.isUndefined(values)) {
+            values = enumValues;
+          }
           valuesScopeName = "$values_" + id.replace(/\./g, "_");
           scope[valuesScopeName] = values;
         }
@@ -250,14 +263,14 @@ module Forms {
     if (!angular.isString(type)) {
       return null;
     }
-    var defaultValueConverter = null;
-    var defaultValue = property.default;
+    var defaultValueConverter:(scope:any, modelName:string) => void = null;
+    var defaultValue = property.default || property.defaultValue;
     if (defaultValue) {
         // lets add a default value
-        defaultValueConverter = function (scope, modelName) {
+        defaultValueConverter = (scope, modelName):void => {
           var value = Core.pathGet(scope, modelName);
           if (!value)  {
-            Core.pathSet(scope, modelName, property.default);
+            Core.pathSet(scope, modelName, defaultValue);
           }
         };
         options.valueConverter = defaultValueConverter;
@@ -266,7 +279,7 @@ module Forms {
     function getModelValueOrDefault(scope, modelName) {
       var value = Core.pathGet(scope, modelName);
       if (!value) {
-        var defaultValue = property.default;
+        var defaultValue = property.default || property.defaultValue;
         if (defaultValue) {
           value = defaultValue;
           Core.pathSet(scope, modelName, value);
@@ -305,13 +318,7 @@ module Forms {
       case "java.util.iterator":
       case "java.util.set":
       case "object[]":
-
-        // TODO hack for now - objects should not really use the table, thats only really for arrays...
-        /*
-         case "object":
-         case "java.lang.object":
-         */
-        //return "hawtio-form-array";
+        // no standard markup for these types
         return null;
 
       case "boolean":
@@ -332,13 +339,52 @@ module Forms {
 
       case "hidden":
         return '<input type="hidden"/>';
+
+      case "map":
+        return null;
+
       default:
         // lets check if this name is an alias to a definition in the schema
         return '<input type="text"/>';
     }
   }
 
-  export function normalize(type, property, schema) {
+  export function mapType(type:String):String {
+    switch (type.toLowerCase()) {
+      case "int":
+      case "integer":
+      case "long":
+      case "short":
+      case "java.lang.integer":
+      case "java.lang.long":
+      case "float":
+      case "double":
+      case "java.lang.float":
+      case "java.lang.double":
+        return "number";
+      case "array":
+      case "java.lang.array":
+      case "java.lang.iterable":
+      case "java.util.list":
+      case "java.util.collection":
+      case "java.util.iterator":
+      case "java.util.set":
+      case "object[]":
+        return "text";
+      case "boolean":
+      case "bool":
+      case "java.lang.boolean":
+        return "checkbox";
+      case "password":
+        return "password";
+      case "hidden":
+        return "hidden";
+      default:
+        return "text";
+    }
+  }
+
+  export function normalize(type, property:any, schema) {
     type = Forms.resolveTypeNameAlias(type, schema);
     if (!type) {
       return "hawtio-form-text";
@@ -387,19 +433,18 @@ module Forms {
       case "java.util.iterator":
       case "java.util.set":
       case "object[]":
-
-        // TODO hack for now - objects should not really use the table, thats only really for arrays...
-        /*
-         case "object":
-         case "java.lang.object":
-         */
-        var items = property.items;
+        var items:any = property.items;
         if (items) {
           var typeName = items.type;
           if (typeName && typeName === "string") {
             return "hawtio-form-string-array";
           }
+        } else {
+          // let's use the string array if no type is set,
+          // at least that provides a form of some kind
+          return "hawtio-form-string-array";
         }
+        log.debug("Returning hawtio-form-array for : ", property);
         return "hawtio-form-array";
       case "boolean":
       case "bool":
@@ -409,6 +454,8 @@ module Forms {
         return "hawtio-form-password";
       case "hidden":
         return "hawtio-form-hidden";
+      case "map":
+        return "hawtio-form-map";
       default:
         // lets check if this name is an alias to a definition in the schema
         return "hawtio-form-text";

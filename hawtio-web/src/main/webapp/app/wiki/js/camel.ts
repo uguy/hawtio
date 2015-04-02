@@ -1,13 +1,16 @@
 /**
  * @module Wiki
  */
+/// <reference path="./wikiPlugin.ts"/>
 module Wiki {
 
-  export function CamelController($scope, $location, $routeParams, localStorage:WindowLocalStorage, workspace:Workspace, wikiRepository:GitWikiRepository, jolokia) {
+  export var CamelController = _module.controller("Wiki.CamelController", ["$scope", "$location", "$routeParams", "localStorage", "workspace", "wikiRepository", "jolokia", ($scope, $location, $routeParams, localStorage:WindowLocalStorage, workspace:Workspace, wikiRepository:GitWikiRepository, jolokia) => {
     Wiki.initScope($scope, $routeParams, $location);
     Camel.initEndpointChooserScope($scope, $location, localStorage, workspace, jolokia);
     $scope.schema = Camel.getConfiguredCamelModel();
     $scope.modified = false;
+
+    $scope.switchToCanvasView = new UI.Dialog();
 
     $scope.findProfileCamelContext = true;
     $scope.camelSelectionDetails = {
@@ -20,13 +23,13 @@ module Wiki {
     };
 
     $scope.camelSubLevelTabs = [
-      {
+      /*{
         content: '<i class="icon-picture"></i> Canvas',
         title: "Edit the diagram in a draggy droppy way",
         isValid: (workspace:Workspace) => true,
         href: () => Wiki.startLink($scope.branch) + "/camel/canvas/" + $scope.pageId
       },
-      {
+      */{
         content: '<i class=" icon-sitemap"></i> Tree',
         title: "View the routes as a tree",
         isValid: (workspace:Workspace) => true,
@@ -99,7 +102,7 @@ module Wiki {
           node.key = key;
           node["nodeModel"] = value;
           var tooltip = value["tooltip"] || value["description"] || label;
-          var imageUrl = url(value["icon"] || Camel.endpointIcon);
+          var imageUrl = Core.url(value["icon"] || Camel.endpointIcon);
           node.icon = imageUrl;
           node.tooltip = tooltip;
 
@@ -217,7 +220,7 @@ module Wiki {
             var commitMessage = $scope.commitMessage || "Updated page " + $scope.pageId;
             wikiRepository.putPage($scope.branch, $scope.pageId, text, commitMessage, (status) => {
               Wiki.onComplete(status);
-              notification("success", "Saved " + $scope.pageId);
+              Core.notification("success", "Saved " + $scope.pageId);
               $scope.modified = false;
               goToView();
               Core.$apply($scope);
@@ -461,5 +464,18 @@ module Wiki {
        }
        */
     }
-  }
+
+    $scope.doSwitchToCanvasView = () => {
+      $location.url(Core.trimLeading((Wiki.startLink($scope.branch) + "/camel/canvas/" + $scope.pageId), '#'));
+    };
+
+    $scope.confirmSwitchToCanvasView = () => {
+      if ($scope.modified) {
+        $scope.switchToCanvasView.open();
+      } else {
+        $scope.doSwitchToCanvasView();
+      }
+    };
+
+  }]);
 }

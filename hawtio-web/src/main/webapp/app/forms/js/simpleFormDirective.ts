@@ -1,3 +1,6 @@
+/// <reference path="../../baseIncludes.ts"/>
+/// <reference path="formHelpers.ts"/>
+/// <reference path="mappingRegistry.ts"/>
 module Forms {
 
   export class SimpleFormConfig {
@@ -5,14 +8,14 @@ module Forms {
     public name = 'form';
     public method = 'post';
 
-    // the name of the attribute in the scope which is the data to be editted
+    // the name of the attribute in the scope which is the data to be edited
     public entity = 'entity';
 
     // the name of the full schema
     public schemaName = 'schema';
 
     // set to 'view' or 'create' for different modes
-    public mode = 'edit';
+    public mode:string = 'edit';
 
     // the definition of the form
     public data:any = {};
@@ -33,10 +36,12 @@ module Forms {
     public labelclass = 'control-label';
 
     public showtypes = 'false';
+    public showhelp = 'true';
+    public showempty = 'true';
 
     public onsubmit = 'onSubmit';
 
-    public getMode() {
+    public getMode():string {
       return this.mode || "edit";
     }
 
@@ -77,11 +82,11 @@ module Forms {
       var fullSchemaName = attrs["schema"];
       var fullSchema = fullSchemaName ? scope[fullSchemaName] : null;
 
-      var compiledNode = null;
-      var childScope = null;
-      var tabs = null;
-      var fieldset = null;
-      var schema = null;
+      var compiledNode:any = null;
+      var childScope:any = null;
+      var tabs:any = null;
+      var fieldset:any = null;
+      var schema:any = null;
       var configScopeName = attrs[this.attributeName] || attrs["data"];
 
       var firstControl = null;
@@ -120,10 +125,10 @@ module Forms {
 
         if (schema && angular.isDefined(schema.tabs)) {
           tabs.use = true;
-          tabs['div'] = $('<div class="tabbable hawtio-form-tabs"></div>');
+          tabs['div'] = (<any>$)('<div class="tabbable hawtio-form-tabs"></div>');
 
           angular.forEach(schema.tabs, function (value, key) {
-            tabs.elements[key] = $('<div class="tab-pane" title="' + key + '"></div>');
+            tabs.elements[key] = (<any>$)('<div class="tab-pane" title="' + key + '"></div>');
             tabs['div'].append(tabs.elements[key]);
             value.forEach(function (val) {
               tabs.locations[val] = key;
@@ -205,7 +210,7 @@ module Forms {
 
         if (onSubmit === null) {
           onSubmit = function (json, form) {
-            notification('error', 'No submit handler defined for form ' + form.get(0).name);
+            log.info("No submit handler defined for form:", form.get(0).name)
           }
         }
 
@@ -238,7 +243,7 @@ module Forms {
 
 
         if (compiledNode) {
-          $(compiledNode).remove();
+          (<any>$)(compiledNode).remove();
         }
         if (childScope) {
           childScope.$destroy();
@@ -264,7 +269,7 @@ module Forms {
           var formScope = formName += "$scope";
           forms[formScope] = childScope;
         }
-        $(element).append(compiledNode);
+        (<any>$)(element).append(compiledNode);
 
 
       }
@@ -286,7 +291,7 @@ module Forms {
       }
 
       function findTabOrderValue(id) {
-        var answer = null;
+        var answer:any = null;
         angular.forEach(schema.tabs, function (value, key) {
           value.forEach(function (val) {
             if (!answer && val !== "*" && id.match(val)) {
@@ -295,7 +300,7 @@ module Forms {
           });
         });
         if (!answer) {
-          answer = '*'
+          answer = '*';
         }
         return answer;
       }
@@ -312,18 +317,52 @@ module Forms {
         if (!propSchema) {
           propSchema = Forms.lookupDefinition(propTypeName, fullSchema);
         }
+        var disableHumanizeLabel = schema ? schema.disableHumanizeLabel : false;
 
         // lets ignore fields marked as hidden from the generated form
         if (property.hidden) {
           return;
         }
+
+        // special for expression (Apache Camel)
+        if (property.kind === "expression") {
+          propSchema = Forms.lookupDefinition("expression", fullSchema);
+
+          // create 2 inputs, the 1st is the drop down with the languages
+          // and then merge the 2 inputs together, which is a hack
+          // but easier to do than change the complicated Forms.createWidget to do a widget with a selectbox + input
+          var childId = id + ".language";
+          var childId2 = id + ".expression";
+
+          // for the 2nd input we need to use the information from the original property for title, description, required etc.
+          var adjustedProperty = jQuery.extend(true, {}, propSchema.properties.expression);
+          adjustedProperty.description = property.description;
+          adjustedProperty.title = property.title;
+          adjustedProperty.required = property.required;
+
+          var input:JQuery = Forms.createWidget(propTypeName, propSchema.properties.language, schema, config, childId, ignorePrefixInLabel, configScopeName, true, disableHumanizeLabel);
+          var input2:JQuery = Forms.createWidget(propTypeName, adjustedProperty, schema, config, childId2, ignorePrefixInLabel, configScopeName, true, disableHumanizeLabel);
+
+          // move the selectbox from input to input2 as we want it to be on the same line
+          var selectWidget = input.find("select");
+          var inputWidget = input2.find("input");
+          if (selectWidget && inputWidget) {
+            // adjust the widght so the two inputs can be on the same line and have same combined length as the others (600px)
+            selectWidget.attr("style", "width: 120px; margin-right: 10px");
+            inputWidget.attr("style", "width: 470px");
+            inputWidget.before(selectWidget);
+          }
+
+          fieldset.append(input2);
+          return;
+        }
+
         var nestedProperties = null;
         if (!propSchema && "object" === propTypeName && property.properties) {
           // if we've no type name but have nested properties on an object type use those
           nestedProperties = property.properties;
         } else if (propSchema && Forms.isObjectType(propSchema)) {
           // otherwise use the nested properties from the related schema type
-          console.log("type name " + propTypeName + " has nested object type " + JSON.stringify(propSchema, null, "  "));
           nestedProperties = propSchema.properties;
         }
         if (nestedProperties) {
@@ -332,7 +371,8 @@ module Forms {
             addProperty(newId, childProp, property.ignorePrefixInLabel);
           });
         } else {
-          var input = Forms.createWidget(propTypeName, property, schema, config, id, ignorePrefixInLabel, configScopeName);
+          var wrapInGroup = true;
+          var input = Forms.createWidget(propTypeName, property, schema, config, id, ignorePrefixInLabel, configScopeName, wrapInGroup, disableHumanizeLabel);
 
           if (tabs.use) {
             var tabkey = findTabKey(id);
@@ -355,7 +395,7 @@ module Forms {
     }
 
     private createForm(config) {
-      var form = $('<form class="' + config.formclass + '" novalidate><fieldset></fieldset></form>');
+      var form = (<any>$)('<form class="' + config.formclass + '" novalidate><fieldset></fieldset></form>');
       form.attr('name', config.name);
       form.attr('action', config.action);
       form.attr('method', config.method);

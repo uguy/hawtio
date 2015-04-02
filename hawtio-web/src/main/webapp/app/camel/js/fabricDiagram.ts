@@ -1,6 +1,7 @@
+/// <reference path="camelPlugin.ts"/>
 module Camel {
 
-  export function FabricDiagramController($scope, $compile, $location, localStorage, jolokia, workspace) {
+  _module.controller("Camel.FabricDiagramController", ["$scope", "$compile", "$location", "localStorage", "jolokia", "workspace", ($scope, $compile, $location, localStorage, jolokia, workspace) => {
 
     Fabric.initScope($scope, $location, jolokia, workspace);
 
@@ -84,7 +85,7 @@ module Camel {
       }
     };
 
-    function connectToContainer(container, postfix, viewPrefix = "/jmx/attributes?tab=camel") {
+    function connectToContainer(container, postfix, viewPrefix = "#/jmx/attributes?tab=camel") {
       var view = viewPrefix;
       if (postfix) {
         view += postfix;
@@ -178,14 +179,14 @@ module Camel {
         angular.forEach(value, (v, k) => {
           if (onlyShowKeys ? onlyShowKeys.indexOf(k) >= 0 : ignoreKeys.indexOf(k) < 0) {
             var formattedValue = Core.humanizeValueHtml(v);
-            properties.push({key: humanizeValue(k), value: formattedValue});
+            properties.push({key: Core.humanizeValue(k), value: formattedValue});
           }
         });
         properties = properties.sortBy("key");
 
         if (containerId && isFmc) {
-          var containerModel = "selectedNode.container";
-          properties.splice(0, 0, {key: "Container", value: $compile('<div fabric-container-link="' + containerModel + '"></div>')($scope)});
+          //var containerModel = "selectedNode.container";
+          properties.splice(0, 0, {key: "Container", value: $compile('<div fabric-container-link="' + selectedNode['container']['id'] + '"></div>')($scope)});
         }
 
 
@@ -210,7 +211,7 @@ module Camel {
      */
     function createDestinationLink(destinationName, destinationType = "queue") {
       return $compile('<a target="destination" title="' + destinationName + '" ng-click="connectToEndpoint()">' +
-        //'<img title="View destination" src="app/activemq/img/' + destinationType + '.png"> ' +
+        //'<img title="View destination" src="img/icons/activemq/' + destinationType + '.png"> ' +
         destinationName +
         '</a>')($scope);
     }
@@ -315,7 +316,7 @@ module Camel {
           var attributes = details['attributes'];
           var contextId = attributes["context"];
           if (!routeId) {
-            routeId = trimQuotes(attributes["name"]);
+            routeId = Core.trimQuotes(attributes["name"]);
           }
           attributes["routeId"] = routeId;
           attributes["mbean"] = objectName;
@@ -383,7 +384,7 @@ module Camel {
           //log.info("attributes: " + angular.toJson(attributes));
           var contextId = attributes["context"];
           if (!uri) {
-            uri = trimQuotes(attributes["name"]);
+            uri = Core.trimQuotes(attributes["name"]);
           }
           attributes["uri"] = uri;
           attributes["mbean"] = objectName;
@@ -527,7 +528,7 @@ module Camel {
             var details = Core.parseMBean(objectName);
             var attributes = details['attributes'];
             var contextId = attributes["context"];
-            var uri = trimQuotes(attributes["name"]);
+            var uri = Core.trimQuotes(attributes["name"]);
             getOrCreateCamelContext(contextId, objectName);
           });
           //graphModelUpdated();
@@ -616,5 +617,5 @@ module Camel {
       properties.isQueue = !typeName.startsWith("t");
       properties['destType'] = typeName;
     }
-  }
+  }]);
 }

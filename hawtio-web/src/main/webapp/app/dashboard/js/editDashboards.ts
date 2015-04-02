@@ -1,9 +1,10 @@
 /**
  * @module Dashboard
  */
+/// <reference path="dashboardPlugin.ts"/>
 module Dashboard {
 
-  export function EditDashboardsController($scope, $routeParams, $route, $location, $rootScope, dashboardRepository:DefaultDashboardRepository, jolokia, workspace:Workspace) {
+  _module.controller("Dashboard.EditDashboardsController", ["$scope", "$routeParams", "$route", "$location", "$rootScope", "dashboardRepository", "jolokia", "workspace", "$timeout", ($scope, $routeParams, $route, $location, $rootScope, dashboardRepository:DefaultDashboardRepository, jolokia, workspace:Workspace, $timeout) => {
 
     $scope.hash = workspace.hash();
     $scope.selectedItems = [];
@@ -11,12 +12,27 @@ module Dashboard {
     $scope.duplicateDashboards = new UI.Dialog();
     $scope.selectedProfilesDialog = [];
     $scope._dashboards = [];
+    $scope.edit = false;
 
     $rootScope.$on('dashboardsUpdated', dashboardLoaded);
 
     $scope.hasUrl = () => {
       return ($scope.url) ? true : false;
     };
+
+    $scope.navigateTo = (url) => {
+      if (!$scope.edit) {
+        $location.url(url);
+      }
+    };
+
+    $scope.$on('editablePropertyEdit', (ev, edit) => {
+      // to change the value after original click even finishes propagation
+      // if changing here to false, $cope.navigateTo() would be called when closing the editable-property
+      $timeout(() => {
+        $scope.edit = edit;
+      }, 0, false);
+    });
 
     $scope.hasSelection = () => {
       return $scope.selectedItems.length !== 0;
@@ -36,14 +52,16 @@ module Dashboard {
         {
           field: 'title',
           displayName: 'Dashboard',
-          cellTemplate: '<div class="ngCellText"><a ng-href="#/dashboard/id/{{row.getProperty(' + "'id'" + ')}}{{hash}}"><editable-property class="inline-block" on-save="onDashRenamed(row.entity)" property="title" ng-model="row.entity"></editable-property></a></div>'
+          cellTemplate: '<div class="ngCellText"><span class="a" ng-click="navigateTo(\'/dashboard/id/{{row.getProperty(\'id\')}}{{hash}}\')"><editable-property class="inline-block" on-save="onDashRenamed(row.entity)" property="title" ng-model="row.entity"></editable-property></span></div>'
         },
         {
           field: 'group',
           displayName: 'Group'
         }
-      ]
+      ],
+      afterSelectionChange: afterSelectionChange
     };
+
 
     $scope.onDashRenamed = (dash) => {
       dashboardRepository.putDashboards([dash], "Renamed dashboard", (dashboards) => {
@@ -120,6 +138,8 @@ module Dashboard {
       var commitMessage = "Duplicating " + $scope.selectedItems.length + " dashboards to " + $scope.selectedProfilesDialog.length + " profiles";
 
       dashboardRepository.putDashboards(newDashboards, commitMessage, (dashboards) => {
+        // let's just be safe and ensure there's no selections
+        deselectAll();
         dashboardLoaded(null, dashboards);
       });
 
@@ -235,6 +255,15 @@ module Dashboard {
 
               while (!found) {
                 widget.col = 1;
+                if (widget.col + widget.size_x > gridWidth) {
+                  // let's not look for a place next to existing widget
+                  selectedItem.widgets.forEach(function(w, idx) {
+                    if (widget.row <= w.row) {
+                      widget.row++;
+                    }
+                  });
+                  found = true;
+                }
                 for (; (widget.col + widget.size_x) <= gridWidth; widget.col++) {
                   if (!selectedItem.widgets.any((w) => {
                     var c = collision(w, widget);
@@ -288,7 +317,8 @@ module Dashboard {
       var newDash = dashboardRepository.createDashboard({title: title});
 
       dashboardRepository.putDashboards([newDash], "Created new dashboard: " + title, (dashboards) => {
-        $scope.selectedItems.push(newDash);
+        // let's just be safe and ensure there's no selections
+        deselectAll();
         dashboardLoaded(null, dashboards);
       });
 
@@ -305,7 +335,7 @@ module Dashboard {
       });
 
       // let's just be safe and ensure there's no selections
-      $scope.selectedItems = [];
+      deselectAll();
 
       commitMessage = commitMessage + newDashboards.map((d) => { return d.title }).join(',');
       dashboardRepository.putDashboards(newDashboards, commitMessage, (dashboards) => {
@@ -313,10 +343,11 @@ module Dashboard {
       });
     };
 
-    $scope.delete = () => {
+    $scope.deleteDashboard = () => {
       if ($scope.hasSelection()) {
         dashboardRepository.deleteDashboards($scope.selectedItems, (dashboards) => {
-          $scope.selectedItems = [];
+          // let's just be safe and ensure there's no selections
+          deselectAll();
           dashboardLoaded(null, dashboards);
         });
       }
@@ -367,14 +398,20 @@ module Dashboard {
       return $scope._dashboards;
     }
 
-    updateData();
+    function afterSelectionChange(rowItem, checkAll) {
+      if (checkAll === void 0) {
+        // then row was clicked, not select-all checkbox
+        $scope.gridOptions['$gridScope'].allSelected = rowItem.config.selectedItems.length == $scope._dashboards.length;
+      } else {
+        $scope.gridOptions['$gridScope'].allSelected = checkAll;
+      }
+    }
 
-    /*
-     // TODO for case where we navigate to the add view
-     // for some reason the route update event isn't enough...
-     // and we need to do this async to avoid the size calculation being wrong
-     // bit of a hack - would love to remove! :)
-     setTimeout(updateData, 100);
-   */
-  }
+    function deselectAll() {
+      $scope.selectedItems.splice(0);
+      $scope.gridOptions['$gridScope'].allSelected = false;
+    }
+
+    updateData();
+  }]);
 }

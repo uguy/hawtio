@@ -1,6 +1,6 @@
+/// <reference path="fabricPlugin.ts"/>
 module Fabric {
-
-  export function FabricBrokersController($scope, localStorage, $routeParams, $location, jolokia, workspace, $compile, $templateCache) {
+  _module.controller("Fabric.FabricBrokersController", ["$scope", "localStorage", "$routeParams", "$location", "jolokia", "workspace", "$compile", "$templateCache", ($scope, localStorage, $routeParams, $location, jolokia, workspace, $compile, $templateCache) => {
 
     Fabric.initScope($scope, $location, jolokia, workspace);
 
@@ -43,7 +43,7 @@ module Fabric {
 
     function matchesFilter(text) {
       var filter = $scope.searchFilter;
-      return !filter || (text && text.has(filter));
+      return !filter || (text && text.toLowerCase().has(filter.toLowerCase()));
     }
 
     $scope.groupMatchesFilter = (group) => {
@@ -161,7 +161,8 @@ module Fabric {
             });
             var count = Object.values(profile.containers).length;
             var required = profile.requirements.minimumInstances || 0;
-            profile.requireStyle = Fabric.containerCountBadgeStyle(required, count);
+            var max = profile.requirements.maximumInstances || -1;
+            profile.requireStyle = Fabric.containerCountBadgeStyle(required, max, count);
             profile.count = count;
             profile.requiredToolTip = "this profile requires " + Core.maybePlural(required, "container")
                     + " to be running but is currently running " + Core.maybePlural(count, "container");
@@ -174,5 +175,5 @@ module Fabric {
         Core.$apply($scope);
       }
     }
-  }
+  }]);
 }

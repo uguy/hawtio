@@ -1,6 +1,7 @@
 /**
  * @module Log
  */
+/// <reference path="./logPlugin.ts"/>
 module Log {
 
   var log:Logging.Logger = Logger.get("Log");
@@ -13,20 +14,22 @@ module Log {
     message: string;
   }
 
-  export function LogController($scope, $routeParams, $location, localStorage, workspace:Workspace, $window, $document, $templateCache) {
+  _module.controller("Log.LogController", ["$scope", "$routeParams", "$location", "localStorage", "workspace", "jolokia", "$window", "$document", "$templateCache", ($scope, $routeParams, $location, localStorage, workspace:Workspace, jolokia, $window, $document, $templateCache) => {
     $scope.sortAsc = true;
     var value = localStorage["logSortAsc"];
     if (angular.isString(value)) {
       $scope.sortAsc = "true" === value;
     }
     $scope.autoScroll = true;
-    var value = localStorage["logAutoScroll"];
+    value = localStorage["logAutoScroll"];
     if (angular.isString(value)) {
       $scope.autoScroll = "true" === value;
     }
 
+    value = localStorage["logBatchSize"];
+    $scope.logBatchSize = angular.isNumber(value) ? value : 20;
+
     $scope.logs = [];
-    $scope.branding = Branding.enabled;
     $scope.showRowDetails = false;
     $scope.showRaw = {
       expanded: false
@@ -45,7 +48,9 @@ module Log {
         // The default logging level to show, empty string => show all
         logLevelQuery: $routeParams['l'],
         // The default value of the exact match logging filter
-        logLevelExactMatch: Core.parseBooleanValue($routeParams['e'])
+        logLevelExactMatch: Core.parseBooleanValue($routeParams['e']),
+        // The default value of the search only in message field filter
+        messageOnly: Core.parseBooleanValue($routeParams['o'])
       };
 
       if (!angular.isDefined($scope.filter.logLevelQuery)) {
@@ -53,6 +58,9 @@ module Log {
       }
       if (!angular.isDefined($scope.filter.logLevelExactMatch)) {
         $scope.filter.logLevelExactMatch = false;
+      }
+      if (!angular.isDefined($scope.filter.messageOnly)) {
+        $scope.filter.messageOnly = false;
       }
     };
 
@@ -76,10 +84,21 @@ module Log {
       }
     });
 
+    $scope.$watch('filter.messageOnly', (newValue, oldValue) => {
+      if (newValue !== oldValue) {
+        $location.search('o', newValue);
+      }
+    });
+
     $scope.init();
 
     $scope.toTime = 0;
-    $scope.queryJSON = { type: "EXEC", mbean: logQueryMBean, operation: "logResultsSince", arguments: [$scope.toTime], ignoreErrors: true};
+    $scope.logFilter = {
+      afterTimestamp: $scope.toTime,
+      count: $scope.logBatchSize
+    };
+    $scope.logFilterJson = JSON.stringify($scope.logFilter);
+    $scope.queryJSON = { type: "EXEC", mbean: logQueryMBean, operation: "jsonQueryLogResults", arguments: [$scope.logFilterJson], ignoreErrors: true};
 
 
     $scope.logLevels = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
@@ -172,6 +191,13 @@ module Log {
       return Log.hasLogSourceHref(row);
     };
 
+    $scope.hasLogSourceLineHref = (row) => {
+      if (!row) {
+        return false;
+      }
+      return Log.hasLogSourceLineHref(row);
+    };
+
     $scope.dateFormat = 'yyyy-MM-dd HH:mm:ss';
 
     $scope.formatException = (line) => {
@@ -195,7 +221,7 @@ module Log {
       var routeParams = angular.toJson($routeParams)
       var size = angular.toJson({
         size_x: 8,
-        size_y: 1
+        size_y: 3
       });
       var title = "Logs";
       if ($scope.filter.logLevelQuery !== "") {
@@ -207,6 +233,10 @@ module Log {
       if ($scope.searchText !== "") {
         title = title + " Filter: " + $scope.searchText;
       }
+      if ($scope.filter.messageOnly) {
+        title = title + " Message Only";
+      }
+
       return "#/dashboard/add?tab=dashboard" +
           "&href=" + encodeURIComponent(href) +
           "&routeParams=" + encodeURIComponent(routeParams) +
@@ -230,6 +260,7 @@ module Log {
     };
 
     $scope.filterLogMessage = (log) => {
+      var messageOnly = $scope.filter.messageOnly;
 
       if ($scope.filter.logLevelQuery !== "") {
         var logLevelExactMatch = $scope.filter.logLevelExactMatch;
@@ -253,6 +284,9 @@ module Log {
       }
       if ($scope.searchText.startsWith("m=")) {
         return log.message.has($scope.searchText.last($scope.searchText.length - 2));
+      }
+      if (messageOnly) {
+        return log.message.has($scope.searchText);
       }
       return log.logger.has($scope.searchText) || log.message.has($scope.searchText);
     };
@@ -296,6 +330,8 @@ module Log {
       }
 
       var logs = response.events;
+      //log.info("log returned " + (logs ? logs.length : 0) + " results for query: " + $scope.toTime  + " from json: " + $scope.logFilterJson);
+
       var toTime = response.toTimestamp;
       if (toTime && angular.isNumber(toTime)) {
         if (toTime < 0) {
@@ -303,14 +339,17 @@ module Log {
           console.log("ignoring dodgy value of toTime: " + toTime);
         } else {
           $scope.toTime = toTime;
-          $scope.queryJSON.arguments = [toTime];
+          $scope.logFilter.afterTimestamp = $scope.toTime;
+          $scope.logFilterJson = JSON.stringify($scope.logFilter);
+          $scope.queryJSON.arguments = [$scope.logFilterJson];
+          // log.info("log returned " + (logs ? logs.length : 0) + " results for query: " + $scope.toTime  + " from json: " + $scope.logFilterJson);
         }
       }
       if (logs) {
         var maxSize = getLogCacheSize(localStorage);
         //don't really need many logs in a widget...
         if ($scope.inDashboard) {
-          maxSize = 10;
+          maxSize = 50;
         }
         var counter = 0;
         logs.forEach((log:ILog) => {
@@ -359,7 +398,7 @@ module Log {
               if ($scope.sortAsc) {
                 pos = $document.height() - window.height();
               }
-              log.debug("Scrolling to position: " + pos)
+              log.debug("Scrolling to position: " + pos);
               $document.scrollTop(pos);
             }, 20);
           }
@@ -369,30 +408,34 @@ module Log {
     };
 
 
-    var jolokia = workspace.jolokia;
-    jolokia.execute(logQueryMBean, "allLogResults", onSuccess(updateValues));
-
     // listen for updates adding the since
     var asyncUpdateValues = function (response) {
       var value = response.value;
       if (value) {
         updateValues(value);
       } else {
-        notification("error", "Failed to get a response! " + JSON.stringify(response, null, 4));
+        Core.notification("error", "Failed to get a response! " + JSON.stringify(response, null, 4));
       }
     };
 
-    var callback = onSuccess(asyncUpdateValues,
+    var callbackOptions = onSuccess(asyncUpdateValues,
             {
               error: (response) => {
                 asyncUpdateValues(response);
-              }
+              },
+              silent: true
             });
 
-
     if (logQueryMBean) {
-      scopeStoreJolokiaHandle($scope, jolokia, jolokia.register(callback, $scope.queryJSON));
-    }
-  }
+      var firstCallback = function (results) {
+        updateValues(results);
 
+        // now lets register to perform incremental updates
+        Core.register(jolokia, $scope, $scope.queryJSON, callbackOptions);
+      };
+
+      // load more log lines at initial load, so we load the 1st 1000 log lines
+      jolokia.execute(logQueryMBean, "getLogResults(int)", 1000, onSuccess(firstCallback));
+    }
+  }]);
 }

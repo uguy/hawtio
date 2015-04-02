@@ -8,7 +8,15 @@ module Insight {
   export var allContainers = { id: '-- all --' };
 
   export function hasInsight(workspace) {
-    return workspace.treeContainsDomainAndProperties('org.elasticsearch', {service: 'restjmx'});
+    return workspace.treeContainsDomainAndProperties('io.fabric8.insight', {type: 'Elasticsearch'});
+  }
+
+  export function hasKibana(workspace) {
+    return workspace.treeContainsDomainAndProperties('hawtio', {type: 'plugin', name: 'hawtio-kibana'});
+  }
+
+  export function hasEsHead(workspace) {
+    return workspace.treeContainsDomainAndProperties('hawtio', {type: 'plugin', name: 'hawtio-eshead'});
   }
 
   export function getInsightMetricsCollectorMBean(workspace) {
@@ -17,6 +25,19 @@ module Insight {
       node = workspace.findMBeanWithProperties('org.fusesource.insight', {type: 'MetricsCollector'});
     }
     return node ? node.objectName : null;
+  }
+
+  export function getChildren(node, type, field, hasHost) {
+    var children = [ ];
+    for (var p in node["properties"]) {
+      var obj = node["properties"][p];
+      if (obj["type"] === 'long' || obj["type"] === 'double') {
+        children.push({ title: p, field: field + p, type: type, hasHost: hasHost });
+      } else if (obj["properties"]) {
+        children.push({ title: p, isFolder: true, children: getChildren(obj, type, field + p + ".", hasHost) });
+      }
+    }
+    return children;
   }
 
   export function createCharts($scope, chartsDef, element, jolokia) {

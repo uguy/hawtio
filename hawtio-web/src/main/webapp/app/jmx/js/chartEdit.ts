@@ -1,8 +1,9 @@
 /**
  * @module Jmx
  */
+/// <reference path="./jmxPlugin.ts"/>
 module Jmx {
-  export function ChartEditController($scope, $location, workspace:Workspace, jolokia) {
+  _module.controller("Jmx.ChartEditController", ["$scope", "$location", "workspace", "jolokia", ($scope, $location, workspace:Workspace, jolokia) => {
     $scope.selectedAttributes = [];
     $scope.selectedMBeans = [];
     $scope.metrics = {};
@@ -81,11 +82,24 @@ module Jmx {
           if (name && mbean) {
             mbeanCounter++;
             $scope.mbeans[name] = name;
-            // we need to escape the mbean path for list
-            var listKey = escapeMBeanPath(mbean);
-            //var listKey = encodeMBeanPath(mbean);
-            jolokia.list(listKey, onSuccess((meta) => {
-              var attributes = meta.attr;
+
+            // use same logic as the JMX attributes page which works better than jolokia.list which has problems with
+            // mbeans with special characters such as ? and query parameters such as Camel endpoint mbeans
+            var asQuery = (node) => {
+              // we need to escape the mbean path for list
+              var path = escapeMBeanPath(node);
+              var query = {
+                type: "list",
+                path: path,
+                ignoreErrors: true
+              };
+              return query;
+            };
+            var infoQuery = asQuery(mbean);
+
+            // must use post, so see further below where we pass in {method: "post"}
+            jolokia.request(infoQuery, onSuccess((meta) => {
+              var attributes = meta.value.attr;
               if (attributes) {
                 for (var key in attributes) {
                   var value = attributes[key];
@@ -140,10 +154,13 @@ module Jmx {
                   Core.$apply($scope);
                 }
               }
-            }));
+
+              // update the website
+              Core.$apply($scope);
+            }, {method: "post"}));
           }
         });
       }
     }
-  }
+  }]);
 }

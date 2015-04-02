@@ -15,7 +15,7 @@
 
     though you get this enabled by default if you use hawtio-default.war
    -->
-  <bean id="logQuery" class="org.fusesource.insight.log.log4j.Log4jLogQuery" lazy-init="false" scope="singleton"
+  <bean id="logQuery" class="io.fabric8.insight.log.log4j.Log4jLogQuery" lazy-init="false" scope="singleton"
         init-method="start" destroy-method="stop"/>
 
   <!-- This creates an embedded ActiveMQ Broker -->
@@ -77,6 +77,9 @@
       <property name="domainName" value="org.apache.camel"/>
   </bean>
 
+  <!-- use camel-metrics route policy to gather metrics for all routes -->
+  <bean id="metricsRoutePolicyFactory" class="org.apache.camel.component.metrics.routepolicy.MetricsRoutePolicyFactory"/>
+
   <!-- Here is a sample which processes the input files
          (leaving them in place - see the 'noop' flag), and
          sends them on a JMS queue. This queue is watched by
@@ -84,10 +87,11 @@
          routing on the messages using XPath.
   -->
   <camelContext xmlns="http://camel.apache.org/schema/spring">
-    <route>
+    <!--<route id="fileInputRoute from file:src/test/data?noop=true">-->
+    <route id="fileInputRoute from file:src/test/data?noop=true">
       <from id="inputFiles" uri="file:src/test/data?noop=true"/>
       <to id="firstStep" uri="activemq:personnel.records"/>
-      <to id="firstStep" uri="activemq:very.long.queue.name.goes.here.wow.this.really.is.quite.a.long.queue.name.isnt.it.eh"/>
+      <to id="secondStep" uri="activemq:very.long.queue.name.goes.here.wow.this.really.is.quite.a.long.queue.name.isnt.it.eh"/>
       <bean ref="myBean" method="cheese"/>
       <to id="coolBeans" uri="activemq:browse.me"/>
     </route>
@@ -102,13 +106,27 @@
           <to id="messagesOthers" uri="file:target/messages/others"/>
         </otherwise>
       </choice>
+      <aggregate strategyRef="myAgg" completionTimeout="30000">
+        <correlationExpression>
+          <constant>true</constant>
+        </correlationExpression>
+        <completionPredicate>
+          <simple>${header.done}</simple>
+        </completionPredicate>
+        <completionTimeout>
+          <header>timeoutnow</header>
+        </completionTimeout>
+        <to uri="mock:done"/>
+      </aggregate>
     </route>
     <!-- route for having something trigger all the time -->
     <route id="timerToAMQ">
-      <from uri="timer:foo?period=5000"/>
-      <setBody><constant>Hello World</constant></setBody>
-      <delay><constant>500</constant></delay>
-      <setBody><constant>A Delayed Hello World</constant></setBody>
+      <from uri="timer:foo?period=2000"/>
+      <transform>
+        <constant>Hello World</constant>
+      </transform>
+      <delay><constant>1500</constant></delay>
+      <setBody><simple>A Delayed ${body}</simple></setBody>
       <setHeader headerName="myHeader">
         <constant>This is a new header value</constant>
       </setHeader>
@@ -117,10 +135,12 @@
     </route>
 
     <route id="bytesToAMQ">
-      <from uri="timer:foo?period=5000"/>
-      <setBody><constant>Hello World</constant></setBody>
-      <delay><constant>500</constant></delay>
-      <setBody><constant>A Delayed Hello World</constant></setBody>
+      <from uri="timer:foo?period=2000"/>
+      <transform>
+        <constant>Hello World</constant>
+      </transform>
+      <delay asyncDelayed="true"><constant>1000</constant></delay>
+      <setBody><simple>A Delayed ${body}</simple></setBody>
       <setHeader headerName="myHeader">
         <constant>This is a new header value</constant>
       </setHeader>
@@ -201,7 +221,32 @@
     </route>
   </camelContext>
 
+  <!-- lets have a Camel with the Rest DSL too -->
+  <camelContext id="restCamel" xmlns="http://camel.apache.org/schema/spring">
+
+    <restConfiguration component="jetty" bindingMode="json">
+      <dataFormatProperty key="prettyPrint" value="true"/>
+    </restConfiguration>
+
+    <rest path="/user" consumes="application/json" produces="application/json">
+      <get uri="/view/{id}" outType="io.hawt.camel.rest.User">
+        <to uri="bean:userService?method=getUser(${header.id})"/>
+      </get>
+      <get uri="/list" outType="io.hawt.camel.rest.User[]">
+        <to uri="bean:userService?method=listUsers"/>
+      </get>
+      <put uri="/update" type="io.hawt.camel.rest.UserService" outType="io.hawt.camel.rest.User">
+        <to uri="bean:userService?method=updateUser"/>
+      </put>
+    </rest>
+
+  </camelContext>
+
   <!-- dummy bean for camel routes -->
+  <bean id="myAgg" class="io.hawt.camel.sample.MyAggregationStrategy"/>
+
+  <bean id="userService" class="io.hawt.camel.rest.UserService"/>
+
   <bean id="myBean" class="io.hawt.camel.sample.CheeseBean"/>
 
   <bean id="quartz2" class="org.apache.camel.component.quartz2.QuartzComponent">

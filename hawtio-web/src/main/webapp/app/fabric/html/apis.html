@@ -5,7 +5,7 @@
 
       <div class="section-filter">
         <input type="text" class="search-query" placeholder="Filter..." ng-model="apiOptions.filterOptions.filterText">
-        <i class="icon-remove clickable" title="Clear Filter" ng-click="apiOptions.filterOptions.filterText = ''"></i>
+        <i class="icon-remove clickable" title="Clear filter" ng-click="apiOptions.filterOptions.filterText = ''"></i>
       </div>
 
     </div>
@@ -15,12 +15,16 @@
     <div ng-class="isInDashboardClass()">
       <div class="row-fluid">
         <div ng-show="apis.length">
-          <div class="gridStyle" ng-grid="apiOptions"></div>
+          <table class="table table-striped" hawtio-simple-table="apiOptions"></table>
         </div>
-        <div class="hero-unit" ng-show="apis.length === 0">
-          <p>There are currently no endpoints running in this fabric exposing APIs</p>
 
-          <p>To try out the API browser try create one of the example <a href="#/wiki/branch/{{versionId}}/view/fabric/profiles/example/quickstarts">quickstarts</a></p>
+        <div class="row-fluid" ng-show="!initDone">
+          Loading...
+        </div>
+
+        <div class="hero-unit" ng-show="apis.length === 0 || (apis.length === 1  && apis[0].port.has('FabricResource'))">
+
+          <p>To try out the API browser try creating one of the example <a href="#/wiki/branch/{{versionId}}/view/fabric/profiles/example/quickstarts">quickstarts</a> or </p>
 
           <p>Try creating a container for:
             <a class="btn btn-primary"

@@ -1,3 +1,5 @@
+/// <reference path="../../core/js/coreHelpers.ts"/>
+/// <reference path="../../baseIncludes.ts"/>
 /**
  * @module Forms
  */
@@ -134,8 +136,8 @@ module Forms {
    * @param {String} property
    * @param {any} schema
    */
-  export function findArrayItemsSchema(property, schema) {
-    var items = null;
+  export function findArrayItemsSchema(property, schema):any {
+    var items:any = null;
     if (property && schema) {
       items = property.items;
       if (items) {
@@ -169,6 +171,17 @@ module Forms {
   }
 
   /**
+   * Returns true if the given schema definition property kind matches the given kind
+   * @method isKind
+   * @param {any} definition
+   * @param {string} kind
+   */
+  export function isKind(definition, kind:string) {
+    var kindName = Core.pathGet(definition, "kind");
+    return kindName && kind === kindName;
+  }
+
+  /**
    * Returns true if the given property represents a nested object or array of objects
    * @method isArrayOrNestedObject
    * @param {any} property
@@ -194,15 +207,15 @@ module Forms {
   }
 
   export function getControlGroup(config, arg, id) {
-    var rc = $('<div class="' + config.controlgroupclass + '"></div>');
+    var rc = angular.element('<div class="' + config.controlgroupclass + '"></div>');
     if (angular.isDefined(arg.description)) {
       rc.attr('title', arg.description);
     }
 
-    log.debug("getControlGroup, config:", config, " arg: ", arg, " id: ", id);
+    // log.debug("getControlGroup, config:", config, " arg: ", arg, " id: ", id);
     if (config['properties'] && config['properties'][id]) {
       var elementConfig = config['properties'][id];
-      log.debug("elementConfig: ", elementConfig);
+      // log.debug("elementConfig: ", elementConfig);
       if (elementConfig && 'control-attributes' in elementConfig) {
         angular.forEach(elementConfig['control-attributes'], (value, key) => {
           rc.attr(key, value);
@@ -213,25 +226,37 @@ module Forms {
     return rc;
   }
 
-  export function getLabel(config, arg, label) {
-    return $('<label class="' + config.labelclass + '">' + label + ': </label>');
+  export function getLabel(config, arg, label, required = false) {
+    if (required) {
+      return angular.element('<label class="strong ' + config.labelclass + '">' + label + ': </label>');
+    } else {
+      return angular.element('<label class="' + config.labelclass + '">' + label + ': </label>');
+    }
   }
 
   export function getControlDiv(config) {
-    return $('<div class="' + config.controlclass + '"></div>');
+    return angular.element('<div class="' + config.controlclass + '"></div>');
   }
 
-  export function getHelpSpan(config, arg, id) {
-    var rc:any = '';
-    if (angular.isDefined(arg.type) && config.showtypes !== 'false') {
-      $('<span class="help-block">Type: ' + arg.type + '</span>');
+  export function getHelpSpan(config, arg, id, property = null) {
+    var help = Core.pathGet(config.data, ['properties', id, 'help']);
+    if (Core.isBlank(help)) {
+      // fallback and use description
+      help = Core.pathGet(config.data, ['properties', id, 'description']);
     }
-    return rc;
+    if (Core.isBlank(help) && angular.isDefined(property)) {
+      // fallback and get from property
+      help = Core.pathGet(property, ['help']);
+      if (Core.isBlank(help)) {
+        help = Core.pathGet(property, ['description']);
+      }
+    }
+
+    var show = config.showhelp || "true";
+    if (!Core.isBlank(help)) {
+      return angular.element('<span class="help-block" ng-show="' + show + '">' + help + '</span>');
+    } else {
+      return angular.element('<span class="help-block"></span>');
+    }
   }
-
-
-
-
-
-
 }

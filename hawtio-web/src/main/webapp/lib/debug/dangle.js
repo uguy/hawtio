@@ -805,9 +805,10 @@ angular.module('dangle')
 
                 // width/height (based on giveb radius)
                 var w = (outerRadius * 3) + 30;
-                var h = outerRadius * 3;
+                // ENTESB-2812: DO NOT TOUCH - IE11 hack!
+                var h = outerRadius * ((/Trident\/7\./).test(navigator.userAgent) && scope.$parent.inDashboard ? .25 : 3);
 
-                // arc generator 
+                // arc generator
                 var arc = d3.svg.arc()
                     .outerRadius(outerRadius - 10)
                     .innerRadius(innerRadius);
@@ -817,10 +818,16 @@ angular.module('dangle')
                     .sort(null)
                     .value(function(d) { return d.count; });
 
+                // ENTESB-2812: DO NOT TOUCH - IE11 hack!
+                var scaling = 'xMinYMin meet';
+                if ((/Trident\/7\./).test(navigator.userAgent) && scope.$parent.inDashboard) {
+                    scaling = 'xMinYMax meet';
+                }
+
                 // root svg element
                 var svg = d3.select(element[0])
                     .append('svg')
-                        .attr('preserveAspectRatio', 'xMinYMin meet')
+                        .attr('preserveAspectRatio', scaling)
                         .attr('viewBox', '0 0 ' + w + ' ' + h);
 
                 // group for arcs
