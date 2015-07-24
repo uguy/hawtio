@@ -110,27 +110,41 @@ module Osgi {
         return false;
       }
       var labelText = $scope.getLabel(bundle);
-      if ($scope.display.bundleFilter && !labelText.toLowerCase().has($scope.display.bundleFilter.toLowerCase())) {
-        return false;
-      }
-      if (Core.isBlank($scope.display.bundleFilter)) {
-        var answer = true;
-        if (!$scope.display.showPlatformBundles) {
-          answer = !Karaf.isPlatformBundle(bundle['SymbolicName']);
+      if ($scope.display.bundleFilter) {
+        if (!labelText.toLowerCase().has($scope.display.bundleFilter.toLowerCase())) {
+          return false;
+        } else {
+          if ($scope.display.showActiveMQBundles || $scope.display.showPlatformBundles
+              || $scope.display.showCxfBundles || $scope.display.showCamelBundles) {
+            if ((matchesCheckedBundle(bundle)) ) {
+              return true;
+            } else {
+              return false;
+            }
+          } else {
+            return true;
+          }
         }
-        if (answer && !$scope.display.showActiveMQBundles) {
-          answer = !Karaf.isActiveMQBundle(bundle['SymbolicName']);
+      } else {
+        if (matchesCheckedBundle(bundle)){
+          return true;
+        } else {
+          return false;
         }
-        if (answer && !$scope.display.showCxfBundles) {
-          answer = !Karaf.isCxfBundle(bundle['SymbolicName']);
-        }
-        if (answer && !$scope.display.showCamelBundles) {
-          answer = !Karaf.isCamelBundle(bundle['SymbolicName']);
-        }
-        return answer;
       }
 
       return true;
+    };
+
+    function matchesCheckedBundle(bundle) {
+      if (($scope.display.showPlatformBundles && Karaf.isPlatformBundle(bundle['SymbolicName'])) ||
+          ($scope.display.showActiveMQBundles && Karaf.isActiveMQBundle(bundle['SymbolicName'])) ||
+          ($scope.display.showCxfBundles && Karaf.isCxfBundle(bundle['SymbolicName'])) ||
+          ($scope.display.showCamelBundles && Karaf.isCamelBundle(bundle['SymbolicName'])) ) {
+        return true;
+      } else {
+        return false;
+      }
     };
 
     function processResponse(response) {
@@ -195,7 +209,9 @@ module Osgi {
               log.debug("Updating page...");
               Core.$apply($scope);
             }
-          }));
+          }, { error: (response) => {
+            // let's ignore the error - maybe the bundle is no longer available?
+          } }));
 
         }, 500);
       }

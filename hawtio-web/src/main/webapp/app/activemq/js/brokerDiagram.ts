@@ -2,12 +2,22 @@
 /// <reference path="../../fabric/js/fabricHelpers.ts"/>
 module ActiveMQ {
 
-  _module.controller("ActiveMQ.BrokerDiagramController", ["$scope", "$compile", "$location", "localStorage", "jolokia", "workspace", ($scope, $compile, $location, localStorage, jolokia, workspace) => {
+  _module.controller("ActiveMQ.BrokerDiagramController", ["$scope", "$compile", "$location", "localStorage", "jolokia", "workspace", "$routeParams", ($scope, $compile, $location, localStorage, jolokia, workspace, $routeParams) => {
 
     Fabric.initScope($scope, $location, jolokia, workspace);
 
+    var amqJmxDomain = localStorage['activemqJmxDomain'] || "org.apache.activemq";
+
     var isFmc = Fabric.isFMCContainer(workspace);
     $scope.isFmc = isFmc;
+
+    if (isFmc) {
+      $scope.version = $routeParams['versionId'];
+      if ($scope.version == 'default-version') {
+        $scope.version = Fabric.getDefaultVersionId(jolokia);
+      }
+      $scope.selectedVersion = { id: $scope.version };
+    }
 
     $scope.selectedNode = null;
 
@@ -91,7 +101,7 @@ module ActiveMQ {
         if (!postfix) {
           if (brokerName) {
             // lets default to the broker view
-            postfix = "nid=root-org.apache.activemq-Broker-" + brokerName;
+            postfix = "nid=root-" + amqJmxDomain + "-Broker-" + brokerName;
           }
         }
         if (postfix) {
@@ -114,7 +124,7 @@ module ActiveMQ {
         var destinationName = selectedNode["destinationName"];
         var postfix: string = null;
         if (brokerName && destinationType && destinationName) {
-          postfix = "nid=root-org.apache.activemq-Broker-" + brokerName + "-" + destinationType + "-" + destinationName;
+          postfix = "nid=root-" + amqJmxDomain + "-Broker-" + brokerName + "-" + destinationType + "-" + destinationName;
         }
         connectToBroker(container, brokerName, postfix);
       }
@@ -287,7 +297,16 @@ module ActiveMQ {
     });
 
     if (isFmc) {
-      Core.register(jolokia, $scope, {type: 'exec', mbean: Fabric.mqManagerMBean, operation: "loadBrokerStatus()"}, onSuccess(onBrokerData));
+      var unreg:() => void = null;
+
+      $scope.$watch('selectedVersion.id', (newValue, oldValue) => {
+        if (!Core.isBlank(newValue)) {
+          if (unreg) {
+            unreg();
+          }
+          unreg = <() => void>Core.register(jolokia, $scope, {type: 'exec', mbean: Fabric.mqManagerMBean, operation: "loadBrokerStatus(java.lang.String)", arguments: [ newValue ]}, onSuccess(onBrokerData));
+        }
+      });
     } else {
       // lets just use the current stuff from the workspace
       $scope.$watch('workspace.tree', function () {
@@ -419,7 +438,7 @@ module ActiveMQ {
       };
 
       if ($scope.viewSettings.broker) {
-        jolokia.search("org.apache.activemq:type=Broker,brokerName=*", onSuccess((response) => {
+        jolokia.search(amqJmxDomain + ":type=Broker,brokerName=*", onSuccess((response) => {
           angular.forEach(response, (objectName) => {
             var details = Core.parseMBean(objectName);
             if (details) {
@@ -470,7 +489,7 @@ module ActiveMQ {
     function matchesDestinationName(destinationName, typeName) {
       if (destinationName) {
         var selection = workspace.selection;
-        if (selection && selection.domain === ActiveMQ.jmxDomain) {
+        if (selection && selection.domain === amqJmxDomain) {
           var type = selection.entries["destinationType"];
           if (type) {
             if ((type === "Queue" && typeName === "topic") || (type === "Topic" && typeName === "queue")) {
@@ -511,7 +530,7 @@ module ActiveMQ {
             if (brokerName) {
               // lets ignore temp topic stuff as there's no mbean for these
               if (!destinationName.startsWith("ActiveMQ.Advisory.TempQueue_ActiveMQ.Advisory.TempTopic")) {
-                objectName = "org.apache.activemq:type=Broker,brokerName=" + brokerName +
+                objectName = amqJmxDomain + ":type=Broker,brokerName=" + brokerName +
                   ",destinationType=" + destinationTypeName + ",destinationName=" + destinationName;
               }
             }
@@ -526,7 +545,7 @@ module ActiveMQ {
               }
             };
             if (!brokerName) {
-              containerJolokia.search("org.apache.activemq:destinationType=" + destinationTypeName
+              containerJolokia.search(amqJmxDomain + ":destinationType=" + destinationTypeName
                 + ",destinationName=" + destinationName +",*", onSuccess((response) => {
                 log.info("Found destination mbean: " + response);
                 if (response && response.length) {
@@ -546,7 +565,7 @@ module ActiveMQ {
         // find networks
         var brokerId = container.brokerName;
         if (brokerId && $scope.viewSettings.network && $scope.viewSettings.broker) {
-          containerJolokia.request({type: "read", mbean: "org.apache.activemq:connector=networkConnectors,*"}, onSuccess((response) => {
+          containerJolokia.request({type: "read", mbean: amqJmxDomain + ":connector=networkConnectors,*"}, onSuccess((response) => {
             angular.forEach(response.value, (properties, objectName) => {
               var details = Core.parseMBean(objectName);
               var attributes = details['attributes'];
@@ -564,7 +583,7 @@ module ActiveMQ {
 
         // find consumers
         if ($scope.viewSettings.consumer) {
-          containerJolokia.search("org.apache.activemq:endpoint=Consumer,*", onSuccess((response) => {
+          containerJolokia.search(amqJmxDomain + ":endpoint=Consumer,*", onSuccess((response) => {
             angular.forEach(response, (objectName) => {
               //log.info("Got consumer: " + objectName + " on container: " + id);
               var details = Core.parseMBean(objectName);
@@ -601,7 +620,7 @@ module ActiveMQ {
 
         // find producers
         if ($scope.viewSettings.producer) {
-          containerJolokia.search("org.apache.activemq:endpoint=Producer,*", onSuccess((response) => {
+          containerJolokia.search(amqJmxDomain + ":endpoint=Producer,*", onSuccess((response) => {
             angular.forEach(response, (objectName) => {
               var details = Core.parseMBean(objectName);
               if (details) {
@@ -638,7 +657,7 @@ module ActiveMQ {
 
         // find dynamic producers
         if ($scope.viewSettings.producer) {
-          containerJolokia.request({type: "read", mbean: "org.apache.activemq:endpoint=dynamicProducer,*"}, onSuccess((response) => {
+          containerJolokia.request({type: "read", mbean: amqJmxDomain + ":endpoint=dynamicProducer,*"}, onSuccess((response) => {
             angular.forEach(response.value, (mbeanValues, objectName) => {
               var details = Core.parseMBean(objectName);
               var attributes = details['attributes'];
@@ -701,7 +720,7 @@ module ActiveMQ {
         if (master) {
           if (!broker['objectName']) {
             // lets try guess the mbean name
-            broker['objectName'] = "org.apache.activemq:type=Broker,brokerName=" + brokerId;
+            broker['objectName'] = amqJmxDomain + ":type=Broker,brokerName=" + brokerId;
             log.info("Guessed broker mbean: " + broker['objectName']);
           }
           if (!broker['brokerContainer'] && container) {
